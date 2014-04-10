@@ -80,6 +80,38 @@ inline int detectMotion(const Mat & motion, Mat & result, Mat & result_cropped,
     return 0;
 }
 
+//detect main color
+// http://laconsigna.wordpress.com/2011/04/29/1d-histogram-on-opencv/
+void detectColor ( const Mat & tmat ) {
+
+  Mat hsv;
+  vector <Mat> channels;
+  int i, h;
+  MatND tH;
+  int maxH;
+  
+  int nbins=64;
+  int histSize[]= {nbins};
+  float hue_range[] = { 0, 180 };
+  const float* hRanges[] = { hue_range };
+
+  cvtColor(tmat, hsv, CV_RGB2HSV);
+  split(hsv, channels);
+  calcHist(&channels[0], 1, 0, Mat(), tH, 1, histSize, hRanges, true, false); 
+  h=0; maxH=0;
+  
+  for ( i=0; i<tH.rows-1; i++ ) {
+    if (tH.at<float>(i) > maxH ) {
+      maxH=(int) tH.at<float>(i) ;
+      h=i;
+    };//if greater
+  };//for i
+
+//  cout << "hue: " << h << "  maxh : " << maxH << endl;
+
+};//detect Color
+
+
 
 int main (int argc, char * const argv[])
 {
@@ -131,7 +163,6 @@ int main (int argc, char * const argv[])
     moveWindow("cropped",500,500);
 //    moveWindow("Main Color",500,50);
     
-    
     // All settings have been set, now go in endless loop and
     // take as many pictures you want..
     while (true){
@@ -164,7 +195,7 @@ int main (int argc, char * const argv[])
               cout << "changes detected" << endl;
               imshow("moved",result);
               imshow("cropped",result_cropped);
-              
+              detectColor(result_cropped); //detect main color
             }
             number_of_sequence++;
         }
