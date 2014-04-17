@@ -1,8 +1,7 @@
-//ver 1.1
+//ver 1.3
 
 //http://blog.cedric.ws/opencv-simple-motion-detection
 //requires webcam
-
 
 #define _CRT_SECURE_NO_WARNINGS
 
@@ -18,16 +17,14 @@
 #include "opencv2/highgui/highgui.hpp"
 
 #include <time.h>
-//#include <dirent.h>
-//#include "dirent.h"
-//#include <sstream>
-//#include "direct.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 
 using namespace std;
 using namespace cv;
 
+void detectHueColor ( const Mat & );    //detect main hue color
+void detectBGRColor ( const Mat & );    //detect main BGR color
 
 // Check if there is motion in the result matrix
 // count the number of changes and return.
@@ -80,42 +77,10 @@ inline int detectMotion(const Mat & motion, Mat & result, Mat & result_cropped,
     return 0;
 }
 
-//detect main color
-// http://laconsigna.wordpress.com/2011/04/29/1d-histogram-on-opencv/
-void detectColor ( const Mat & tmat ) {
-
-  Mat hsv;
-  vector <Mat> channels;
-  int i, h;
-  MatND tH;
-  int maxH;
-  
-  int nbins=64;
-  int histSize[]= {nbins};
-  float hue_range[] = { 0, 180 };
-  const float* hRanges[] = { hue_range };
-
-  cvtColor(tmat, hsv, CV_RGB2HSV);
-  split(hsv, channels);
-  calcHist(&channels[0], 1, 0, Mat(), tH, 1, histSize, hRanges, true, false); 
-  h=0; maxH=0;
-  
-  for ( i=0; i<tH.rows-1; i++ ) {
-    if (tH.at<float>(i) > maxH ) {
-      maxH=(int) tH.at<float>(i) ;
-      h=i;
-    };//if greater
-  };//for i
-
-//  cout << "hue: " << h << "  maxh : " << maxH << endl;
-
-};//detect Color
-
 
 
 int main (int argc, char * const argv[])
 {
-
     const int DELAY = 500; // in mseconds, take a picture every 1/2 second
 
     // Set up camera
@@ -156,12 +121,14 @@ int main (int argc, char * const argv[])
 
     namedWindow("moved",0);
     namedWindow("cropped");
-//    namedWindow("Main Color");
+    namedWindow("Main Hue Color");
+    namedWindow("Main BGR Color");
     resizeWindow("moved",640,480);
 //    resizeWindow("cropped",200,200);
     moveWindow("moved",10,10);
     moveWindow("cropped",500,500);
-//    moveWindow("Main Color",500,50);
+    moveWindow("Main Hue Color",500,50);
+    moveWindow("Main BGR COlor", 700, 150);
     
     // All settings have been set, now go in endless loop and
     // take as many pictures you want..
@@ -195,7 +162,8 @@ int main (int argc, char * const argv[])
               cout << "changes detected" << endl;
               imshow("moved",result);
               imshow("cropped",result_cropped);
-              detectColor(result_cropped); //detect main color
+              detectHueColor(result_cropped); //detect main hue color
+              detectBGRColor(result_cropped); // detect main BGR color
             }
             number_of_sequence++;
         }
@@ -208,3 +176,77 @@ int main (int argc, char * const argv[])
     }
     return 0;    
 }
+
+//detect main Hue color
+// http://laconsigna.wordpress.com/2011/04/29/1d-histogram-on-opencv/
+void detectHueColor ( const Mat & tmat ) {
+//find main hue color
+  Mat hsv;
+  vector <Mat> channels;
+  int i, h;
+  MatND tH;
+  int maxH;
+  int nbins=64;
+  int histSize[]= {nbins};
+  float hue_range[] = { 0, 180 };
+  const float* hRanges[] = { hue_range };
+
+  cvtColor(tmat, hsv, CV_BGR2HSV);
+  split(hsv, channels);
+  calcHist(&channels[0], 1, 0, Mat(), tH, 1, histSize, hRanges, true, false); 
+  h=0; maxH=0;
+  
+  for ( i=0; i<tH.rows-1; i++ ) {
+    if (tH.at<float>(i) > maxH ) {
+      maxH=(int) tH.at<float>(i) ;
+      h=i;
+    };//if greater
+  };//for i
+  
+//  cout << "hue: " << h << "  maxh : " << maxH << endl;
+
+//display hue color 50x50 max value, saturation
+  Mat hmColor(50,50,CV_8UC3,Scalar(h,255,255) );
+  Mat mHColor;
+  cvtColor(hmColor, mHColor, CV_HSV2BGR);
+  imshow("Main Hue Color", mHColor);
+
+};//detect Color
+
+
+void detectBGRColor ( const Mat & tmat) {
+//http://stackoverflow.com/questions/20567643/getting-dominant-colour-value-from-hsv-histogram
+  Mat image_bgr;
+  cvtColor(tmat, image_bgr, CV_BGR2HSV);
+    
+  int bbins = 36, gbins = 36, rbins = 36;
+  int histSize[] = {bbins, gbins, rbins};
+  float branges[] = { 0, 256 }; float granges[] = { 0, 256 }; float rranges[] = { 0, 256 };
+  const float* ranges[] = { branges, granges, rranges };
+  MatND hist;
+  int channels[] = {0, 1, 2};
+
+  calcHist( &image_bgr, 1, channels, Mat(), // do not use mask
+           hist, 3, histSize, ranges,
+           true, // the histogram is uniform
+           false );
+  
+  int maxVal=0, bMax=0, gMax=0, rMax=0;
+
+  for( int b = 0; b < bbins; b++ ) {
+    for( int g = 0; g < gbins; g++ ) {
+      for( int r = 0; r < rbins; r++ ) {
+        int binVal = hist.at<int>(b, g, r);
+        if(binVal > maxVal) {
+          maxVal = binVal;
+          bMax = b; gMax = g; rMax = r;
+        };//if
+      };//for r
+    };//for g
+  };//for b
+
+  cout<< "b: " << bMax << "\tg: " << gMax << " \tr: " << rMax << endl;
+
+  Mat mBGRColor(50,50, CV_8UC3, Scalar(bMax, gMax, rMax) );
+  imshow("Main BGR Color", mBGRColor);
+};//detect color
