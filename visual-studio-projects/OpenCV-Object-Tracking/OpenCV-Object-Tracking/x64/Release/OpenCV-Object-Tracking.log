@@ -1,8 +1,6 @@
-﻿Build started 4/22/2014 9:19:31 PM.
+﻿Build started 4/23/2014 2:13:12 AM.
      1>Project "C:\Users\Dillon\Documents\GitHub\turbo-bear\visual-studio-projects\OpenCV-Object-Tracking\OpenCV-Object-Tracking\OpenCV-Object-Tracking.vcxproj" on node 2 (build target(s)).
-     1>PrepareForBuild:
-         Creating directory "C:\Users\Dillon\Documents\GitHub\turbo-bear\visual-studio-projects\OpenCV-Object-Tracking\x64\Release\".
-       InitializeBuildStatus:
+     1>InitializeBuildStatus:
          Creating "x64\Release\OpenCV-Object-Tracking.unsuccessfulbuild" because "AlwaysCreate" was specified.
        ClCompile:
          c:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\x86_amd64\CL.exe /c /IC:\OpenCV\Builds\install\include /IC:\OpenCV\Builds\install\include\opencv /IC:\OpenCV\Builds\install\include\opencv2 /Zi /nologo /W3 /WX- /O2 /Oi /GL /D _MBCS /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Fo"x64\Release\\" /Fd"x64\Release\vc100.pdb" /Gd /TP /errorReport:prompt main.cpp
@@ -21,4 +19,4 @@
 
 Build succeeded.
 
-Time Elapsed 00:00:02.35
+Time Elapsed 00:00:01.51

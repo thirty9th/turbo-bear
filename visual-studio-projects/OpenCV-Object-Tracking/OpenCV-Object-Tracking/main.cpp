@@ -46,6 +46,7 @@ bool loadImage(Mat&, std::string);
 void displayImage(Mat&, std::string, bool);
 void displayVideo(VideoCapture&, std::string);
 void threshholdImage(Mat&, Mat&);
+int displayThreshholdedFrames(VideoCapture&, const std::string&);
 
 int main(int argc, char* const argv[])
 {
@@ -67,14 +68,14 @@ int main(int argc, char* const argv[])
         return EXIT_ERROR;
     }
 
-	// Loop through loading frames and displaying them
-	namedWindow("window", 1);
-	displayVideo(capture, "window");
-
-	// TODO: Threshhold the image
+	// Loop through the video frames, threshhold them and display them
+	namedWindow("Threshholded-Frames", 1);
+	int totalFrames = displayThreshholdedFrames(capture, "Threshholded-Frames");
+    std::cout << "$ Total frames in video source: " << totalFrames << std::endl;
 
 	// Exit successfully
 	std::cout << "$ Program terminated successfully." << std::endl;
+    std::cin.get();
 	return EXIT_SUCCESS;
 
 }
@@ -180,6 +181,37 @@ void threshholdImage(Mat& input, Mat& output)
 {
 	// Perform the threshholding operation by checking if each pixel is in the proper
 	// range of values
-	inRange(input, Scalar(20, 100, 100), Scalar(30, 255, 255), output);
+	inRange(input, Scalar(20, 20, 0), Scalar(80, 80, 15), output);
+
+}
+
+/*
+ *
+ * 	displayThreshholdedFrames - uses a window to display, frame-by-frame, the contents of a
+ *  video given a certain threshhold
+ *
+ */
+int displayThreshholdedFrames(VideoCapture& capture, const std::string& windowName)
+{
+	
+    // Grab each frame in the video, threshhold it and display it
+    Mat frame, threshholdedFrame;
+	int frameCount = 0;
+	while(1)
+	{
+        // Get current frame image
+		capture >> frame;
+
+        // Check for end conditions
+		if (frame.empty()) return frameCount;	// End of video
+        else
+        {
+            // Apply threshholding routine
+		    threshholdImage(frame, threshholdedFrame);
+		    displayImage(threshholdedFrame, windowName, false);
+		    waitKey(20);            // Wait 20ms to display next frame
+		    frameCount++;           // Update frame counter
+        }
+	}
 
 }
