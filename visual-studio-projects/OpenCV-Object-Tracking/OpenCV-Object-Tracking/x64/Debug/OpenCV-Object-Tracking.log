@@ -1,4 +1,4 @@
-﻿Build started 4/22/2014 4:50:18 PM.
+﻿Build started 4/22/2014 9:14:16 PM.
      1>Project "C:\Users\Dillon\Documents\GitHub\turbo-bear\visual-studio-projects\OpenCV-Object-Tracking\OpenCV-Object-Tracking\OpenCV-Object-Tracking.vcxproj" on node 2 (build target(s)).
      1>InitializeBuildStatus:
          Creating "x64\Debug\OpenCV-Object-Tracking.unsuccessfulbuild" because "AlwaysCreate" was specified.
@@ -18,4 +18,4 @@
 
 Build succeeded.
 
-Time Elapsed 00:00:01.29
+Time Elapsed 00:00:01.68
