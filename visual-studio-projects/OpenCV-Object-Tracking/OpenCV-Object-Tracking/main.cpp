@@ -32,11 +32,16 @@ const std::string imageDir = "images/";
 const std::string videoDir = "videos/";
 const std::string sourceVideo = "source.mp4";
 
+// Variables
+int trackHueMin, trackHueMax;   // Threshhold min and max
+
 /*
  * 	Defines
  */
 #define EXIT_SUCCESS 0
 #define EXIT_ERROR 1
+#define MIN_COLOR_VALUE 0
+#define MAX_COLOR_VALUE 255
 
 /*
  * 	Function Prototypes
@@ -47,6 +52,7 @@ void displayImage(Mat&, std::string, bool);
 void displayVideo(VideoCapture&, std::string);
 void threshholdImage(Mat&, Mat&);
 int displayThreshholdedFrames(VideoCapture&, const std::string&);
+void showThreshholdTrackbars(const std::string);
 
 int main(int argc, char* const argv[])
 {
@@ -69,7 +75,11 @@ int main(int argc, char* const argv[])
     }
 
 	// Loop through the video frames, threshhold them and display them
-	namedWindow("Threshholded-Frames", 1);
+    const std::string threshholdedFramesWindow = "Threshholded-Frames";
+    const std::string trackbarsWindow = "Threshhold-Adjustments";
+	namedWindow(threshholdedFramesWindow, 1);
+    namedWindow(trackbarsWindow, 1);
+    showThreshholdTrackbars(trackbarsWindow);
 	int totalFrames = displayThreshholdedFrames(capture, "Threshholded-Frames");
     std::cout << "$ Total frames in video source: " << totalFrames << std::endl;
 
@@ -179,9 +189,12 @@ void displayVideo(VideoCapture& capture, std::string windowName)
  */
 void threshholdImage(Mat& input, Mat& output)
 {
+
 	// Perform the threshholding operation by checking if each pixel is in the proper
 	// range of values
-	inRange(input, Scalar(20, 20, 0), Scalar(80, 80, 15), output);
+    Scalar minimum = (trackHueMin, 0, 0);    // Grab trackbar values
+    Scalar maximum = (trackHueMax, 255, 255);
+	inRange(input, minimum, maximum, output);
 
 }
 
@@ -195,7 +208,7 @@ int displayThreshholdedFrames(VideoCapture& capture, const std::string& windowNa
 {
 	
     // Grab each frame in the video, threshhold it and display it
-    Mat frame, threshholdedFrame;
+    Mat frame, threshholdedFrame, frameHSV;
 	int frameCount = 0;
 	while(1)
 	{
@@ -206,12 +219,32 @@ int displayThreshholdedFrames(VideoCapture& capture, const std::string& windowNa
 		if (frame.empty()) return frameCount;	// End of video
         else
         {
+            // First convert frame to HSV color space for better threshhold results
+            frame.convertTo(frameHSV, COLOR_RGB2HSV);
+
             // Apply threshholding routine
-		    threshholdImage(frame, threshholdedFrame);
+		    threshholdImage(frameHSV, threshholdedFrame);
 		    displayImage(threshholdedFrame, windowName, false);
 		    waitKey(20);            // Wait 20ms to display next frame
 		    frameCount++;           // Update frame counter
         }
 	}
+
+}
+
+/*
+ *
+ *  showThreshholdTrackbars - displays a window with 2 trackbars, respresenting the minimum and
+ *  maximum hue to be factored into the threshholding
+ *
+ */
+void showThreshholdTrackbars(const std::string windowName)
+{
+
+    // Create a window and trackbars to populate it
+    trackHueMin = 0;
+    trackHueMax = 0;
+    createTrackbar("Hue Min.", windowName, &trackHueMin, MAX_COLOR_VALUE);
+    createTrackbar("Hue Max.", windowName, &trackHueMax, MAX_COLOR_VALUE);
 
 }
