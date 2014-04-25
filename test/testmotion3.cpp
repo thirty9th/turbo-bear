@@ -1,34 +1,127 @@
-//ver 1.4
+//ver 2.4
 
-//http://blog.cedric.ws/opencv-simple-motion-detection
-//requires webcam
+/*
+this ver allows reading of file OR webcam, by choice
+-motion diff
+-main rgb
+-main hue
 
-#define _CRT_SECURE_NO_WARNINGS
+also I changed method of reading camera to see if improvement
 
-//
-//  Created by Cedric Verstraeten on 18/02/14.
-//  Copyright (c) 2014 Cedric Verstraeten. All rights reserved.
-//
+some portions based off of
+http://blog.cedric.ws/opencv-simple-motion-detection
+*/
 
 #include <iostream>
-#include <fstream>
 
 #include "opencv2/opencv.hpp"
 #include "opencv2/highgui/highgui.hpp"
-
-#include <time.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 
 using namespace std;
 using namespace cv;
 
 void detectHueColor ( const Mat & );    //detect main hue color
 void detectBGRColor ( const Mat & );    //detect main BGR color
+int detectMotion(const Mat & , Mat & , Mat & , int , int , int , int , int, Scalar &);
 
-// Check if there is motion in the result matrix
-// count the number of changes and return.
-inline int detectMotion(const Mat & motion, Mat & result, Mat & result_cropped,
+int main (int argc, char * const argv[]) {
+  Mat     result, result_cropped, prev_frame, current_frame, next_frame;
+  Mat     d1, d2, motion;
+  
+  int number_of_changes, number_of_sequence = 0;
+  Scalar mean_, color(0,255,255); // yellow
+  int x_start, x_stop, y_start , y_stop;
+  int there_is_motion = 5;
+  int max_deviation = 20;
+  Mat kernel_ero = getStructuringElement(MORPH_RECT, Size(2,2));
+  bool    vcapBool, keepGoing;
+  int     entchoice; 
+  
+  cout <<"[1] for webcam      [else] read from file    : ";
+  cin >>entchoice;
+  
+  VideoCapture capWcam(0);
+  VideoCapture capFile("../../MVI_0182.MOV");
+  
+  if (entchoice==1) {
+    capFile.release();
+    cout <<"Webcam: "<< "w: "<< capWcam.get(CV_CAP_PROP_FRAME_WIDTH) << "   h: "<< capWcam.get(CV_CAP_PROP_FRAME_HEIGHT) << endl;
+  } else {
+    capWcam.release();
+    cout << "File: "<< "fps: " << capFile.get(CV_CAP_PROP_FPS)<<endl;
+  };
+  
+  if (entchoice==1) {
+    capWcam.read(result);
+    capWcam.read(prev_frame);
+    capWcam.read(current_frame);
+    capWcam.read(next_frame);
+  } else {
+    capFile.read(result);
+    capFile.read(prev_frame);
+    capFile.read(current_frame);
+    capFile.read(next_frame);
+  }
+
+  x_start=y_start=10;
+  x_stop=current_frame.cols-10;
+  y_stop=current_frame.rows-10;
+
+  cvtColor(current_frame, current_frame, CV_RGB2GRAY);
+  cvtColor(prev_frame, prev_frame, CV_RGB2GRAY);
+  cvtColor(next_frame, next_frame, CV_RGB2GRAY);
+
+  namedWindow("Main",CV_WINDOW_AUTOSIZE);
+  moveWindow("Main",10,10);
+  namedWindow("Cropped");
+  moveWindow("Cropped",700,100);
+  namedWindow("Main Hue Color");
+  moveWindow("Main Hue Color",800,200);
+  namedWindow("Main BGR Color");
+  moveWindow("Main BGR Color",800,400);
+   
+  if (entchoice==1) { keepGoing=capWcam.isOpened();
+    } else { keepGoing=capFile.isOpened(); };//if
+
+  //while (cap.isOpened()){
+  while (keepGoing){
+    prev_frame = current_frame;
+    current_frame = next_frame;
+    if (entchoice==1) { vcapBool=capWcam.read(next_frame); } else {  vcapBool=capFile.read(next_frame); };//if
+    if (!vcapBool) { cout<<"something went wrong with capture source"<<endl; };
+    result = next_frame;
+    cvtColor(next_frame, next_frame, CV_RGB2GRAY);
+    
+    absdiff(prev_frame, next_frame, d1);
+    absdiff(next_frame, current_frame, d2);
+    bitwise_and(d1, d2, motion);
+    threshold(motion, motion, 35, 255, CV_THRESH_BINARY);
+    erode(motion, motion, kernel_ero);
+    
+    number_of_changes = detectMotion(motion, result, result_cropped,  x_start, x_stop, y_start, y_stop, max_deviation, color);
+      if(number_of_changes>=there_is_motion) {
+            if(number_of_sequence>0) { 
+              cout << "changes detected" << endl;
+              imshow("Main",result);
+              imshow("Cropped",result_cropped);
+              detectHueColor(result_cropped); //detect main hue color
+              detectBGRColor(result_cropped); // detect main BGR color
+            };//if 
+            number_of_sequence++;
+      } else {
+            number_of_sequence = 0;
+    //        cvWaitKey (DELAY);
+      };//else
+
+    if (entchoice==1) { keepGoing=capWcam.isOpened();
+      } else { keepGoing=capFile.isOpened(); };//if
+    if (waitKey(30) == 27) { cout << "esc key is pressed by user" << endl; break; };
+
+  };//while cap is open
+};//main
+
+
+int detectMotion(const Mat & motion, Mat & result, Mat & result_cropped,
                  int x_start, int x_stop, int y_start, int y_stop,
                  int max_deviation,
                  Scalar & color)
@@ -37,8 +130,7 @@ inline int detectMotion(const Mat & motion, Mat & result, Mat & result_cropped,
     Scalar mean, stddev;
     meanStdDev(motion, mean, stddev);
     // if not to much changes then the motion is real (neglect agressive snow, temporary sunlight)
-    if(stddev[0] < max_deviation)
-    {
+    if(stddev[0] < max_deviation) {
         int number_of_changes = 0;
         int min_x = motion.cols, max_x = 0;
         int min_y = motion.rows, max_y = 0;
@@ -71,139 +163,12 @@ inline int detectMotion(const Mat & motion, Mat & result, Mat & result_cropped,
             Mat cropped = result(rect);
             cropped.copyTo(result_cropped);
             rectangle(result,rect,color,1);
-        }
+        };//
         return number_of_changes;
-    }
+    };//
     return 0;
-}
+};//detectMotion
 
-
-
-int main (int argc, char * const argv[])
-{
-    const int DELAY = 500; // in mseconds, take a picture every 1/2 second
-
-    bool fileSuccess;
-
-/*
-    // Set up camera
-    CvCapture * camera = cvCaptureFromCAM(CV_CAP_ANY);
-    cvSetCaptureProperty(camera, CV_CAP_PROP_FRAME_WIDTH, 1280); // width of viewport of camera
-    cvSetCaptureProperty(camera, CV_CAP_PROP_FRAME_HEIGHT, 720); // height of ...
-*/
-
-    // Take images and convert them to gray
-    Mat result, result_cropped;
-
-    /*
-    Mat prev_frame = result = cvQueryFrame(camera);
-    Mat current_frame = cvQueryFrame(camera);
-    Mat next_frame = cvQueryFrame(camera);
-    */
-
-//http://opencv-srf.blogspot.com/2011/09/capturing-images-videos.html
-    VideoCapture cap("../../MVI_0182.MOV");
-    if ( !cap.isOpened() ) {
-      cout << "Cannot open the video file" << endl;
-      return -1;
-    };
-    double fps = cap.get(CV_CAP_PROP_FPS); //get the frames per seconds of the video
-    cout << "Frame per seconds : " << fps << endl;
-    namedWindow("MyVideo",CV_WINDOW_AUTOSIZE); //create a window called "MyVideo"
-
-    Mat prev_frame, current_frame, next_frame;
-    cap.read(prev_frame);
-    cap.read(current_frame);
-    cap.read(next_frame);
-
-    cvtColor(current_frame, current_frame, CV_RGB2GRAY);
-    cvtColor(prev_frame, prev_frame, CV_RGB2GRAY);
-    cvtColor(next_frame, next_frame, CV_RGB2GRAY);
-    
-    // d1 and d2 for calculating the differences
-    // result, the result of and operation, calculated on d1 and d2
-    // number_of_changes, the amount of changes in the result matrix.
-    // color, the color for drawing the rectangle when something has changed.
-    Mat d1, d2, motion;
-    int number_of_changes, number_of_sequence = 0;
-    Scalar mean_, color(0,255,255); // yellow
-    
-    // Detect motion in window
-    int x_start = 10, x_stop = current_frame.cols-11;
-    int y_start = 350, y_stop = 530;
-
-    // If more than 'there_is_motion' pixels are changed, we say there is motion
-    // and store an image on disk
-    int there_is_motion = 5;
-    
-    // Maximum deviation of the image, the higher the value, the more motion is allowed
-    int max_deviation = 20;
-    
-    // Erode kernel
-    Mat kernel_ero = getStructuringElement(MORPH_RECT, Size(2,2));
-
-    namedWindow("moved",0);
-    namedWindow("cropped");
-    namedWindow("Main Hue Color");
-    namedWindow("Main BGR Color");
-    resizeWindow("moved",640,480);
-//    resizeWindow("cropped",200,200);
-    moveWindow("moved",10,10);
-    moveWindow("cropped",500,500);
-    moveWindow("Main Hue Color",500,50);
-    moveWindow("Main BGR COlor", 700, 150);
-    
-    // All settings have been set, now go in endless loop and
-    // take as many pictures you want..
-    while (true){
-        // Take a new image
-        prev_frame = current_frame;
-        current_frame = next_frame;
-  //      next_frame = cvQueryFrame(camera);
-        fileSuccess=cap.read(next_frame);
-        if (!fileSuccess) {
-          cout<<"something went wrong with file"<<endl;
-        };
-
-        result = next_frame;
-        cvtColor(next_frame, next_frame, CV_RGB2GRAY);
-
-        // Calc differences between the images and do AND-operation
-        // threshold image, low differences are ignored (ex. contrast change due to sunlight)
-        absdiff(prev_frame, next_frame, d1);
-        absdiff(next_frame, current_frame, d2);
-        bitwise_and(d1, d2, motion);
-        threshold(motion, motion, 35, 255, CV_THRESH_BINARY);
-        erode(motion, motion, kernel_ero);
-        
-        number_of_changes = detectMotion(motion, result, result_cropped,  x_start, x_stop, y_start, y_stop, max_deviation, color);
-        
-        // If a lot of changes happened, we assume something changed.
-        if(number_of_changes>=there_is_motion)
-        {
-            if(number_of_sequence>0){ 
-              /*
-                saveImg(result,DIR,EXT,DIR_FORMAT.c_str(),FILE_FORMAT.c_str());
-                saveImg(result_cropped,DIR,EXT,DIR_FORMAT.c_str(),CROPPED_FILE_FORMAT.c_str());
-              */
-
-              cout << "changes detected" << endl;
-              imshow("moved",result);
-              imshow("cropped",result_cropped);
-              detectHueColor(result_cropped); //detect main hue color
-              detectBGRColor(result_cropped); // detect main BGR color
-            }
-            number_of_sequence++;
-        }
-        else
-        {
-            number_of_sequence = 0;
-            // Delay, wait a 1/2 second.
-            cvWaitKey (DELAY);
-        }
-    }
-    return 0;    
-}
 
 //detect main Hue color
 // http://laconsigna.wordpress.com/2011/04/29/1d-histogram-on-opencv/
@@ -231,7 +196,7 @@ void detectHueColor ( const Mat & tmat ) {
     };//if greater
   };//for i
   
-  cout << "hue: " << h << "  maxh : " << maxH << endl;
+//  cout << "hue: " << h << "  maxh : " << maxH << endl;
 
 //display hue color 50x50 max value, saturation
   Mat hmColor(50,50,CV_8UC3,Scalar(h,255,255) );
