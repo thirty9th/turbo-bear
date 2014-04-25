@@ -1,4 +1,4 @@
-//ver 1.3
+//ver 1.4
 
 //http://blog.cedric.ws/opencv-simple-motion-detection
 //requires webcam
@@ -83,16 +83,39 @@ int main (int argc, char * const argv[])
 {
     const int DELAY = 500; // in mseconds, take a picture every 1/2 second
 
+    bool fileSuccess;
+
+/*
     // Set up camera
     CvCapture * camera = cvCaptureFromCAM(CV_CAP_ANY);
     cvSetCaptureProperty(camera, CV_CAP_PROP_FRAME_WIDTH, 1280); // width of viewport of camera
     cvSetCaptureProperty(camera, CV_CAP_PROP_FRAME_HEIGHT, 720); // height of ...
+*/
 
     // Take images and convert them to gray
     Mat result, result_cropped;
+
+    /*
     Mat prev_frame = result = cvQueryFrame(camera);
     Mat current_frame = cvQueryFrame(camera);
     Mat next_frame = cvQueryFrame(camera);
+    */
+
+//http://opencv-srf.blogspot.com/2011/09/capturing-images-videos.html
+    VideoCapture cap("../../MVI_0182.MOV");
+    if ( !cap.isOpened() ) {
+      cout << "Cannot open the video file" << endl;
+      return -1;
+    };
+    double fps = cap.get(CV_CAP_PROP_FPS); //get the frames per seconds of the video
+    cout << "Frame per seconds : " << fps << endl;
+    namedWindow("MyVideo",CV_WINDOW_AUTOSIZE); //create a window called "MyVideo"
+
+    Mat prev_frame, current_frame, next_frame;
+    cap.read(prev_frame);
+    cap.read(current_frame);
+    cap.read(next_frame);
+
     cvtColor(current_frame, current_frame, CV_RGB2GRAY);
     cvtColor(prev_frame, prev_frame, CV_RGB2GRAY);
     cvtColor(next_frame, next_frame, CV_RGB2GRAY);
@@ -136,7 +159,12 @@ int main (int argc, char * const argv[])
         // Take a new image
         prev_frame = current_frame;
         current_frame = next_frame;
-        next_frame = cvQueryFrame(camera);
+  //      next_frame = cvQueryFrame(camera);
+        fileSuccess=cap.read(next_frame);
+        if (!fileSuccess) {
+          cout<<"something went wrong with file"<<endl;
+        };
+
         result = next_frame;
         cvtColor(next_frame, next_frame, CV_RGB2GRAY);
 
