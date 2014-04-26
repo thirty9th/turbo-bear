@@ -9,7 +9,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\OpenCV\Builds\install\x64\vc10\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opencv_core300.lib;opencv_features2d300.lib;opencv_highgui300.lib;opencv_imgproc300.lib;opencv_objdetect300.lib;opencv_video300.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opencv_core300.lib;opencv_features2d300.lib;opencv_highgui300.lib;opencv_imgproc300.lib;opencv_objdetect300.lib;opencv_video300.lib;opencv_calib3d300.lib;opencv_nonfree300.lib;opencv_flann300.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup />
