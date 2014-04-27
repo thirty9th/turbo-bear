@@ -36,23 +36,16 @@ const std::string videoDir = "videos/";         // Directory for videos
 const std::string sourceVideo = "source2.mp4";   // Source video
 const std::string objectProfile = "pen.png";    // Object to be detected within video
 
-/* yl - will clean up later, just stuck here to get working ver.
-  set as global var to avoid params 
-*/
-//
-  Mat     result, result_cropped, prev_frame, current_frame, next_frame;
-  Mat     d1, d2, motion;
-  int number_of_changes, number_of_sequence = 0;
-  Scalar mean_, color(0,255,255); // yellow
-  int x_start, x_stop, y_start , y_stop;
-  int there_is_motion = 5;
-  int max_deviation = 20;
-  Mat kernel_ero = getStructuringElement(MORPH_RECT, Size(2,2));
-  bool    vcapBool, keepGoing;
-//
+Mat     result, result_cropped, prev_frame, current_frame, next_frame;
+int     number_of_changes, number_of_sequence = 0;
+Scalar  mean_, color(0,255,255);              // yellow
+int     x_start, x_stop, y_start , y_stop;    //area to detect motion
 
 // Variables
 const int minimumHessian = 400;                 // Parameter for feature detector
+const int there_is_motion = 5;                  //# of detects motion
+const int max_deviation = 20;                   //# of max deviations
+
 
 /*
  * 	Defines
@@ -123,12 +116,12 @@ int main(int argc, const char* argv[])
 
       capture.read(frame);//read in next frame
       result=frame;
-      putText(result,"HUE",Point(0,result.rows-75),FONT_HERSHEY_DUPLEX,1,Scalar(255,255,255));
-      putText(result,"RGB",Point(100,result.rows-75),FONT_HERSHEY_DUPLEX,1,Scalar(255,255,255));
+      putText(result,"HUE",Point(0,result.rows-75),FONT_HERSHEY_DUPLEX,1,Scalar(255,255,255));//write hue on result image
+      putText(result,"RGB",Point(100,result.rows-75),FONT_HERSHEY_DUPLEX,1,Scalar(255,255,255));//write rgb on result image
       motionCheck(frame, result);//motion detection proc and rgb and hue of detected area
 
     /*yl-commented out for now till coded to work within main loop
-    where frame is clean iamge to process, result is image written to show results, currently has rect. from motion
+    where "frame" is clean iamge to process, "result" is image written to show results, currently has rect. from motion
     recommend: detectObjectInVideo( &objectToDetect, detectionWindow, frame, result);
     detectObjectInVideo(capture, &objectToDetect, detectionWindow);
     */
@@ -353,7 +346,8 @@ void initSome(VideoCapture& capture) {
   y_stop=current_frame.rows-10;
 };//initSome
 
-
+//compares frame and difference to detect motion. Draws rectangle around area of interest
+//based from: http://blog.cedric.ws/opencv-simple-motion-detection
 int detectMotion(const Mat & motion, const Mat & frame, Mat & result, Mat & result_cropped,
                  int x_start, int x_stop, int y_start, int y_stop,
                  int max_deviation,
@@ -404,8 +398,7 @@ int detectMotion(const Mat & motion, const Mat & frame, Mat & result, Mat & resu
 
 
 //detect main Hue color
-//based code off of
-// http://laconsigna.wordpress.com/2011/04/29/1d-histogram-on-opencv/
+//based code off of http://laconsigna.wordpress.com/2011/04/29/1d-histogram-on-opencv/
 void detectHueColor ( const Mat & tmat, Mat & result ) {
 //find main hue color
   Mat hsv;
@@ -430,19 +423,15 @@ void detectHueColor ( const Mat & tmat, Mat & result ) {
     };//if greater
   };//for i
   
-//  cout << "hue: " << h << "  maxh : " << maxH << endl;
-
 //display hue color 50x50 max value, saturation
+//  cout << "hue: " << h << "  maxh : " << maxH << endl;
   Mat hmColor(50,50,CV_8UC3,Scalar(h,255,255) );
   Mat mHColor;
   cvtColor(hmColor, mHColor, CV_HSV2BGR);
-//  imshow("Main Hue Color", mHColor);
-
- mHColor.copyTo(result.colRange(0,50).rowRange(result.rows-50,result.rows) );
-
+  mHColor.copyTo(result.colRange(0,50).rowRange(result.rows-50,result.rows) );
 };//detect Color
 
-
+//find main BGR color
 void detectBGRColor ( const Mat & tmat, Mat & result) {
 //based code off of
 //http://stackoverflow.com/questions/20567643/getting-dominant-colour-value-from-hsv-histogram
@@ -475,19 +464,19 @@ void detectBGRColor ( const Mat & tmat, Mat & result) {
     };//for g
   };//for b
 
-//show result
-//cout<< "b: " << bMax << "\tg: " << gMax << " \tr: " << rMax << endl;
-  Mat mBGRColor(50,50, CV_8UC3, Scalar(bMax, gMax, rMax) );
-//  imshow("Main BGR Color", mBGRColor);
-  mBGRColor.copyTo(result.colRange(100,150).rowRange(result.rows-50,result.rows) );
-
+//  cout<< "b: " << bMax << "\tg: " << gMax << " \tr: " << rMax << endl;
+  Mat mBGRColor(50,50, CV_8UC3, Scalar(bMax, gMax, rMax) );     //create small square of color
+  mBGRColor.copyTo(result.colRange(100,150).rowRange(result.rows-50,result.rows) ); //copy image to final result
 };//detect color
 
-
+//main motion detection portion. Compares frame and difference to detect motion
+//based from: http://blog.cedric.ws/opencv-simple-motion-detection
 void motionCheck(const Mat & frame, Mat & result ) {
+  Mat     d1, d2, motion;
+  Mat kernel_ero = getStructuringElement(MORPH_RECT, Size(2,2));
+
   prev_frame = current_frame; current_frame = next_frame; next_frame=frame;
   cvtColor(next_frame, next_frame, CV_BGR2GRAY);
-    
   absdiff(prev_frame, next_frame, d1);
   absdiff(next_frame, current_frame, d2);
   bitwise_and(d1, d2, motion);
@@ -497,9 +486,8 @@ void motionCheck(const Mat & frame, Mat & result ) {
   number_of_changes = detectMotion(motion, frame, result, result_cropped,  x_start, x_stop, y_start, y_stop, max_deviation, color);
     if(number_of_changes>=there_is_motion) {
       if(number_of_sequence>0) { 
-        //cout << "changes detected" << endl;
-//              imshow("Main",result);
-//              imshow("Cropped",result_cropped);
+//      cout << "changes detected" << endl;
+//      imshow("Cropped",result_cropped);
         detectHueColor(result_cropped,result); //detect main hue color
         detectBGRColor(result_cropped,result); // detect main BGR color
       };//if 
