@@ -31,9 +31,9 @@ using namespace cv;
  * 	Globals
  */
 // Filenames
-const std::string imageDir = "images/";         // Directory for images
-const std::string videoDir = "videos/";         // Directory for videos
-const std::string sourceVideo = "source2.mp4";   // Source video
+const std::string imageDir = "images/";             // Directory for images
+const std::string videoDir = "videos/";             // Directory for videos
+const std::string sourceVideo = "source2.mp4";      // Source video
 const std::string objectProfile = "pen.png";    // Object to be detected within video
 
 Mat     result, result_cropped, prev_frame, current_frame, next_frame;
@@ -289,7 +289,7 @@ int detectObjectInVideo(VideoCapture& capture, Mat* objectToDetect, const std::s
         // Keep only descriptor matches that are within 3 times the minimum distance
         for (int i = 0; i < objectDescriptors.rows; i++)
         {
-            if (matches[i].distance < 1.1 * max(objectToDetect->rows, objectToDetect->cols)) keptMatches.push_back(matches[i]);
+            if (matches[i].distance < min(objectToDetect->rows, objectToDetect->cols)) keptMatches.push_back(matches[i]);
         }
 
         // Draw the remaining matches
@@ -304,7 +304,7 @@ int detectObjectInVideo(VideoCapture& capture, Mat* objectToDetect, const std::s
 
         // Find homography
         homography.release();
-        homography = findHomography(Mat(objectPoints), Mat(framePoints), RANSAC, 0.1);
+        homography = findHomography(Mat(objectPoints), Mat(framePoints), RANSAC, 1.0);
         if (homography.empty()) continue;
 
         // Corners of source image for object profile
