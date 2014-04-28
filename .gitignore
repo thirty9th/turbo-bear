@@ -17,6 +17,6 @@
 *.mp4
 
 # Images
-.png
-.PNG
-.jpg
+*.png
+*.PNG
+*.jpg
