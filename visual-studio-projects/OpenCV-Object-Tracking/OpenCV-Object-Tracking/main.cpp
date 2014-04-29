@@ -2,6 +2,7 @@
  *
  * 	File: 			main.cpp
  * 	Author: 		Dillon Fisher
+ * 	            Young Lee
  * 	Date: 			7 April, 2014
  * 	Description:	Driver file for object detection
  * 	Usage:
@@ -34,13 +35,13 @@ using namespace cv;
 const std::string imageDir = "images/";             // Directory for images
 const std::string videoDir = "videos/";             // Directory for videos
 const std::string sourceVideo = "source3.mp4";      // Source video
-const std::string objectProfile = "makeup.png";        // Object to be detected within video
+const std::string objectProfile = "makeup.png";     // Object to be detected within video
 
 // Variables
-Mat     result, result_cropped, prev_frame, current_frame, next_frame;
+Mat     prev_frame, current_frame, next_frame;
 int     number_of_changes, number_of_sequence = 0;
-Scalar  mean_, color(0,255,255);              // yellow
-int     x_start, x_stop, y_start , y_stop;    //area to detect motion
+Scalar  mean_, color(0,255,255);                    // yellow
+int     x_start, x_stop, y_start , y_stop;          //area to detect motion
 
 // Constants
 const int minimumHessian = 400;                         // Parameter for feature detector
@@ -67,12 +68,11 @@ bool loadImage(Mat&, std::string);
 void displayImage(Mat&, std::string, bool);
 void displayVideo(VideoCapture&, const std::string);
 std::vector<Point2f>* detectObjectInVideo(const Mat&, Mat*);
-void detectHueColor ( const Mat &, Mat &);    //detect main hue color
-void detectBGRColor ( const Mat &, Mat &);    //detect main BGR color
+void detectHueColor ( const Mat &, int &);    //detect main hue color
+void detectBGRColor ( const Mat &, int &);    //detect main BGR color
 void initSome(VideoCapture&);
-int detectMotion(const Mat & , const Mat &, Mat & , Mat & , int , int , int , int , int, Scalar &, Rect&);
-void detectBGRColor (const Mat & );
-Rect* motionCheck(const Mat& , Mat&);
+int detectMotion(const Mat & , const Mat &, Mat & , int , int , int , int , int, Scalar &, Rect&);//detect motion
+Rect* motionCheck(const Mat& , int&, int&, int&, int&);//check for motion, return area of interest
 void drawPolygon(Mat&, std::vector<Point2f>, Scalar, int);
 
 int main(int argc, const char* argv[])
@@ -85,7 +85,8 @@ int main(int argc, const char* argv[])
 	// Start capture using a source video location
 	std::string filename = videoDir + sourceVideo;
 	VideoCapture capture(filename);
-    Mat frame;
+  Mat frame;
+  int theHue, theBlue, theGreen, theRed;// main hue,bgr for motionarea
 
 	// Check that it opened properly
 	if (!capture.isOpened())
@@ -112,17 +113,18 @@ int main(int argc, const char* argv[])
     // Perform 2D homography on the video frames and draw bounding boxes on predictions
     // of where the object is
     const std::string detectionWindow = "Homography-Results";
-    namedWindow(detectionWindow, 1);
+    namedWindow(detectionWindow, WINDOW_NORMAL);//resizable
+    resizeWindow(detectionWindow,640,480);//window is resized mouse can change size
 
-    std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n";
+    std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n"; //foc opencv 3.0
+//    std::cout << "fps: " << capture.get(CV_CAP_PROP_FPS)<< "\t w: " << capture.get(CV_CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CV_CAP_PROP_FRAME_HEIGHT) << "\n"; //for opencv 2.4.x
     initSome(capture);
     while ( capture.isOpened() ) {//main Loop
 
       capture.read(frame);//read in next frame
-      result=frame;
 
       // Detect areas of motion; save area for drawing later to avoid conflict with homography
-      Rect* motionBox = motionCheck(frame, result);
+      Rect* motionBox = motionCheck(frame, theHue, theBlue, theGreen, theRed);
 
       // Use homography to predict where the object is in the frame; again save area for drawing later
       std::vector<Point2f>* homographyPoints = detectObjectInVideo(frame, &objectToDetect);
@@ -132,9 +134,16 @@ int main(int argc, const char* argv[])
       frame.copyTo(finalImage);
       rectangle(finalImage, *motionBox, colorMotionBox, 1);                                     // Draw motion prediction box
       drawPolygon(finalImage, *homographyPoints, colorHomographyBox, homographyBoxThickness);   // Draw homography prediction box
-      putText(finalImage,"HUE",Point(0,result.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);       // write hue on result image
-      putText(finalImage,"RGB",Point(100,result.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);     // write rgb on result image
-
+      putText(finalImage,"HUE",Point(0,finalImage.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);       // write hue on result image
+      //display hue color 50x50 max value, saturation
+        Mat hmColor(50,50,CV_8UC3,Scalar(theHue,255,255) ), mHColor;
+        cvtColor(hmColor, mHColor, COLOR_HSV2BGR);
+        mHColor.copyTo(finalImage.colRange(0,50).rowRange(finalImage.rows-50,finalImage.rows) );
+      putText(finalImage,"RGB",Point(100,finalImage.rows-75),FONT_HERSHEY_DUPLEX,1, colorText); // write rgb on result image
+      //display rgb color 50x50 values
+        Mat mBGRColor(50,50, CV_8UC3, Scalar(theBlue, theGreen, theRed) );                      //create small square of color
+        mBGRColor.copyTo(finalImage.colRange(100,150).rowRange(finalImage.rows-50,finalImage.rows) );//copy image to final result
+      
       // Display the result
       imshow(detectionWindow, finalImage);
       if (waitKey(20) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
@@ -331,10 +340,11 @@ std::vector<Point2f>* detectObjectInVideo(const Mat& frame, Mat* objectToDetect)
 
 // initialize some settings before main loop
 void initSome(VideoCapture& capture) {
-  //capture.read(result);
+  //read in 3 frames to prepare for motion detection
   capture.read(prev_frame); cvtColor(prev_frame, prev_frame, COLOR_BGR2GRAY);
   capture.read(current_frame); cvtColor(current_frame, current_frame, COLOR_BGR2GRAY);
   capture.read(next_frame); cvtColor(next_frame, next_frame, COLOR_BGR2GRAY);
+  //set up area to first scan for motion detection
   x_start=y_start=10;
   x_stop=current_frame.cols-10;
   y_stop=current_frame.rows-10;
@@ -342,7 +352,7 @@ void initSome(VideoCapture& capture) {
 
 //compares frame and difference to detect motion. Draws rectangle around area of interest
 //based from: http://blog.cedric.ws/opencv-simple-motion-detection
-int detectMotion(const Mat & motion, const Mat & frame, Mat & result, Mat & result_cropped,
+int detectMotion(const Mat & motion, const Mat & frame, Mat & result_cropped,
                  int x_start, int x_stop, int y_start, int y_stop,
                  int max_deviation,
                  Scalar & color, Rect& drawingArea)
@@ -393,7 +403,7 @@ int detectMotion(const Mat & motion, const Mat & frame, Mat & result, Mat & resu
 
 //detect main Hue color
 //based code off of http://laconsigna.wordpress.com/2011/04/29/1d-histogram-on-opencv/
-void detectHueColor ( const Mat & tmat, Mat & result ) {
+void detectHueColor ( const Mat & tmat, int & theHue ) {
 //find main hue color
   Mat hsv;
   std::vector <Mat> channels;
@@ -417,16 +427,12 @@ void detectHueColor ( const Mat & tmat, Mat & result ) {
     };//if greater
   };//for i
   
-//display hue color 50x50 max value, saturation
 //  cout << "hue: " << h << "  maxh : " << maxH << endl;
-  Mat hmColor(50,50,CV_8UC3,Scalar(h,255,255) );
-  Mat mHColor;
-  cvtColor(hmColor, mHColor, COLOR_HSV2BGR);
-  mHColor.copyTo(result.colRange(0,50).rowRange(result.rows-50,result.rows) );
+  theHue=h;
 };//detect Color
 
 //find main BGR color
-void detectBGRColor ( const Mat & tmat, Mat & result) {
+void detectBGRColor ( const Mat & tmat, int& theBlue, int& theGreen, int& theRed) {
 //based code off of
 //http://stackoverflow.com/questions/20567643/getting-dominant-colour-value-from-hsv-histogram
   Mat image_bgr;
@@ -459,14 +465,15 @@ void detectBGRColor ( const Mat & tmat, Mat & result) {
   };//for b
 
 //  cout<< "b: " << bMax << "\tg: " << gMax << " \tr: " << rMax << endl;
-  Mat mBGRColor(50,50, CV_8UC3, Scalar(bMax, gMax, rMax) );     //create small square of color
-  mBGRColor.copyTo(result.colRange(100,150).rowRange(result.rows-50,result.rows) ); //copy image to final result
+  theBlue=bMax;
+  theGreen=gMax;
+  theRed=rMax;
 };//detect color
 
 //main motion detection portion. Compares frame and difference to detect motion
 //based from: http://blog.cedric.ws/opencv-simple-motion-detection
-Rect* motionCheck(const Mat & frame, Mat & result ) {
-  Mat     d1, d2, motion;
+Rect* motionCheck(const Mat & frame, int & theHue, int &theBlue, int &theGreen, int &theRed ) {
+  Mat     d1, d2, motion, result_cropped;
   Mat kernel_ero = getStructuringElement(MORPH_RECT, Size(2,2));
 
   prev_frame = current_frame; current_frame = next_frame; next_frame=frame;
@@ -480,13 +487,12 @@ Rect* motionCheck(const Mat & frame, Mat & result ) {
   // Rectangle of motion to be drawn later
   Rect rectangleFromMotionDetect;
     
-  number_of_changes = detectMotion(motion, frame, result, result_cropped,  x_start, x_stop, y_start, y_stop, max_deviation, color, rectangleFromMotionDetect);
+  number_of_changes = detectMotion(motion, frame, result_cropped,  x_start, x_stop, y_start, y_stop, max_deviation, color, rectangleFromMotionDetect);
     if(number_of_changes>=there_is_motion) {
       if(number_of_sequence>0) { 
 //      cout << "changes detected" << endl;
-//      imshow("Cropped",result_cropped);
-        detectHueColor(result_cropped,result); //detect main hue color
-        detectBGRColor(result_cropped,result); // detect main BGR color
+        detectHueColor(result_cropped, theHue); //detect main hue color
+        detectBGRColor(result_cropped, theBlue, theGreen, theRed); // detect main BGR color
       };//if 
         number_of_sequence++;
     } else {
