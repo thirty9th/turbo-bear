@@ -33,19 +33,23 @@ using namespace cv;
 // Filenames
 const std::string imageDir = "images/";             // Directory for images
 const std::string videoDir = "videos/";             // Directory for videos
-const std::string sourceVideo = "source2.mp4";      // Source video
-const std::string objectProfile = "pen.png";    // Object to be detected within video
+const std::string sourceVideo = "source3.mp4";      // Source video
+const std::string objectProfile = "makeup.png";        // Object to be detected within video
 
+// Variables
 Mat     result, result_cropped, prev_frame, current_frame, next_frame;
 int     number_of_changes, number_of_sequence = 0;
 Scalar  mean_, color(0,255,255);              // yellow
 int     x_start, x_stop, y_start , y_stop;    //area to detect motion
 
-// Variables
-const int minimumHessian = 400;                 // Parameter for feature detector
-const int there_is_motion = 5;                  //# of detects motion
-const int max_deviation = 20;                   //# of max deviations
-
+// Constants
+const int minimumHessian = 400;                         // Parameter for feature detector
+const int there_is_motion = 5;                          //# of detects motion
+const int max_deviation = 20;                           //# of max deviations
+const Scalar colorMotionBox = Scalar(255, 0, 0);        // Color of bounding box for motion detection
+const Scalar colorHomographyBox = Scalar(0, 255, 0);    // Color of bounding box for homography prediction
+const int homographyBoxThickness = 4;                   // Thickness of homography prediction bounding box
+const Scalar colorText = Scalar(255, 255, 255);         // Color of text drawn to screen
 
 /*
  * 	Defines
@@ -62,14 +66,14 @@ void printHeader();
 bool loadImage(Mat&, std::string);
 void displayImage(Mat&, std::string, bool);
 void displayVideo(VideoCapture&, const std::string);
-int detectObjectInVideo(VideoCapture&, Mat*, const std::string);
+std::vector<Point2f>* detectObjectInVideo(const Mat&, Mat*);
 void detectHueColor ( const Mat &, Mat &);    //detect main hue color
 void detectBGRColor ( const Mat &, Mat &);    //detect main BGR color
 void initSome(VideoCapture&);
-int detectMotion(const Mat & , const Mat &, Mat & , Mat & , int , int , int , int , int, Scalar &);
+int detectMotion(const Mat & , const Mat &, Mat & , Mat & , int , int , int , int , int, Scalar &, Rect&);
 void detectBGRColor (const Mat & );
-void motionCheck(const Mat& , Mat&);
-
+Rect* motionCheck(const Mat& , Mat&);
+void drawPolygon(Mat&, std::vector<Point2f>, Scalar, int);
 
 int main(int argc, const char* argv[])
 {
@@ -81,7 +85,7 @@ int main(int argc, const char* argv[])
 	// Start capture using a source video location
 	std::string filename = videoDir + sourceVideo;
 	VideoCapture capture(filename);
-  Mat frame;
+    Mat frame;
 
 	// Check that it opened properly
 	if (!capture.isOpened())
@@ -110,22 +114,29 @@ int main(int argc, const char* argv[])
     const std::string detectionWindow = "Homography-Results";
     namedWindow(detectionWindow, 1);
 
-    std::cout << "fps: " << capture.get(CV_CAP_PROP_FPS)<< "\t w: " << capture.get(CV_CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CV_CAP_PROP_FRAME_HEIGHT) << "\n";
+    std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n";
     initSome(capture);
     while ( capture.isOpened() ) {//main Loop
 
       capture.read(frame);//read in next frame
       result=frame;
-      putText(result,"HUE",Point(0,result.rows-75),FONT_HERSHEY_DUPLEX,1,Scalar(255,255,255));//write hue on result image
-      putText(result,"RGB",Point(100,result.rows-75),FONT_HERSHEY_DUPLEX,1,Scalar(255,255,255));//write rgb on result image
-      motionCheck(frame, result);//motion detection proc and rgb and hue of detected area
 
-    /*yl-commented out for now till coded to work within main loop
-    where "frame" is clean iamge to process, "result" is image written to show results, currently has rect. from motion
-    recommend: detectObjectInVideo( &objectToDetect, detectionWindow, frame, result);
-    detectObjectInVideo(capture, &objectToDetect, detectionWindow);
-    */
-      imshow(detectionWindow,result);
+      // Detect areas of motion; save area for drawing later to avoid conflict with homography
+      Rect* motionBox = motionCheck(frame, result);
+
+      // Use homography to predict where the object is in the frame; again save area for drawing later
+      std::vector<Point2f>* homographyPoints = detectObjectInVideo(frame, &objectToDetect);
+      
+      // Draw motion box, homography prediction box and Hue/RGB values to new image
+      Mat finalImage;
+      frame.copyTo(finalImage);
+      rectangle(finalImage, *motionBox, colorMotionBox, 1);                                     // Draw motion prediction box
+      drawPolygon(finalImage, *homographyPoints, colorHomographyBox, homographyBoxThickness);   // Draw homography prediction box
+      putText(finalImage,"HUE",Point(0,result.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);       // write hue on result image
+      putText(finalImage,"RGB",Point(100,result.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);     // write rgb on result image
+
+      // Display the result
+      imshow(detectionWindow, finalImage);
       if (waitKey(20) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
 
     };//while main Loop
@@ -230,13 +241,8 @@ void displayVideo(VideoCapture& capture, const std::string windowName)
  *  the object and displays the frames of the video to the screen; returns number of frames in the video
  *
  */
-int detectObjectInVideo(VideoCapture& capture, Mat* objectToDetect, const std::string windowName)
+std::vector<Point2f>* detectObjectInVideo(const Mat& frame, Mat* objectToDetect)
 {
-
-    
-    // Loop variables
-    Mat frame;
-    int count = 0;
 
     // Feature detection variables
     Mat frameGray, objectDescriptors, frameDescriptors, combinedMatches, homography;
@@ -251,96 +257,84 @@ int detectObjectInVideo(VideoCapture& capture, Mat* objectToDetect, const std::s
     std::vector<Point2f> objectPoints, framePoints;
     std::vector<Point2f> objectCorners(4);
     std::vector<Point2f> frameCorners(4);
-
+    std::vector<Point2f> emptyCorners(4);  // Return value if no homography result is found
+    emptyCorners[0] = Point2f(0, 0); emptyCorners[1] = Point2f(0, 0);
+    emptyCorners[2] = Point2f(0, 0); emptyCorners[3] = Point2f(0, 0);
+        
     // Pre-compute object keypoints and descriptors
     detector.detect(*objectToDetect, objectKeypoints);
     extractor.compute(*objectToDetect, objectKeypoints, objectDescriptors);
 
     // For each video frame, convert it to grayscale and process it
-    while (1)
+	if (frame.empty()) return new std::vector<Point2f>(emptyCorners);
+    cvtColor(frame, frameGray, COLOR_BGR2GRAY);                 // Convert frame to grayscale
+
+    // Detect keypoints and calculate feature vectors of video frame
+    detector.detect(frameGray, frameKeypoints);
+    extractor.compute(frameGray, frameKeypoints, frameDescriptors);
+
+    // FLANN matching between descriptors
+    matcher.match(objectDescriptors, frameDescriptors, matches);
+
+    // Calculate minimum and maximum distance between keypoints
+    thisDistance = 0.0;
+    for (int i = 0; i < objectDescriptors.rows; i++)
     {
-        capture >> frame;			                // Get current frame image
-		if (frame.empty()) break;	                // Check for end of video
-        cvtColor(frame, frameGray, COLOR_BGR2GRAY); // Convert frame to grayscale
+        // Update min and max distances as needed
+        thisDistance = matches[i].distance;
+        if (thisDistance < minDistance) minDistance = thisDistance;
+        if (thisDistance > maxDistance) maxDistance = thisDistance;
+    }
 
-        // Cleanup
-        objectPoints.clear();
-        framePoints.clear();
-        matches.clear();
-        keptMatches.clear();
+    // Keep only descriptor matches that are within 3 times the minimum distance
+    for (int i = 0; i < objectDescriptors.rows; i++)
+    {
+        if (matches[i].distance < min(objectToDetect->rows, objectToDetect->cols)) keptMatches.push_back(matches[i]);
+    }
 
-        // Detect keypoints and calculate feature vectors of video frame
-        detector.detect(frameGray, frameKeypoints);
-        extractor.compute(frameGray, frameKeypoints, frameDescriptors);
+    // Draw the remaining matches
+    // drawMatches(*objectToDetect, objectKeypoints, frameGray, frameKeypoints, keptMatches, combinedMatches, Scalar::all(-1), Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
 
-        // FLANN matching between descriptors
-        matcher.match(objectDescriptors, frameDescriptors, matches);
+    // Localize the object
+    for (int i = 0; i < keptMatches.size(); i++)
+    {
+        objectPoints.push_back(objectKeypoints[keptMatches[i].queryIdx].pt);
+        framePoints.push_back(frameKeypoints[keptMatches[i].trainIdx].pt);
+    }
 
-        // Calculate minimum and maximum distance between keypoints
-        thisDistance = 0.0;
-        for (int i = 0; i < objectDescriptors.rows; i++)
-        {
-            // Update min and max distances as needed
-            thisDistance = matches[i].distance;
-            if (thisDistance < minDistance) minDistance = thisDistance;
-            if (thisDistance > maxDistance) maxDistance = thisDistance;
-        }
+    // Find homography
+    homography.release();
+    homography = findHomography(Mat(objectPoints), Mat(framePoints), RANSAC, 1.0);
+    if (homography.empty()) return new std::vector<Point2f>(emptyCorners);
 
-        // Keep only descriptor matches that are within 3 times the minimum distance
-        for (int i = 0; i < objectDescriptors.rows; i++)
-        {
-            if (matches[i].distance < min(objectToDetect->rows, objectToDetect->cols)) keptMatches.push_back(matches[i]);
-        }
+    // Corners of source image for object profile
+    objectCorners[0] = Point2f(0, 0);
+    objectCorners[1] = Point2f(objectToDetect->cols, 0);
+    objectCorners[2] = Point2f(objectToDetect->cols, objectToDetect->rows);
+    objectCorners[3] = Point2f(0, objectToDetect->rows);
 
-        // Draw the remaining matches
-        drawMatches(*objectToDetect, objectKeypoints, frameGray, frameKeypoints, keptMatches, combinedMatches, Scalar::all(-1), Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+    // Perspective drawing
+    perspectiveTransform(objectCorners, frameCorners, homography);
 
-        // Localize the object
-        for (int i = 0; i < keptMatches.size(); i++)
-        {
-            objectPoints.push_back(objectKeypoints[keptMatches[i].queryIdx].pt);
-            framePoints.push_back(frameKeypoints[keptMatches[i].trainIdx].pt);
-        }
+    // Draw lines between corners 1 -> 2, 2 -> 3... etc
+    /*  These are now drawn from main
+    line(combinedMatches, frameCorners[0] + Point2f(objectToDetect->cols, 0), frameCorners[1] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
+    line(combinedMatches, frameCorners[1] + Point2f(objectToDetect->cols, 0), frameCorners[2] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
+    line(combinedMatches, frameCorners[2] + Point2f(objectToDetect->cols, 0), frameCorners[3] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
+    line(combinedMatches, frameCorners[3] + Point2f(objectToDetect->cols, 0), frameCorners[0] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
+    */
 
-        // Find homography
-        homography.release();
-        homography = findHomography(Mat(objectPoints), Mat(framePoints), RANSAC, 1.0);
-        if (homography.empty()) continue;
-
-        // Corners of source image for object profile
-        objectCorners[0] = Point2f(0, 0);
-        objectCorners[1] = Point2f(objectToDetect->cols, 0);
-        objectCorners[2] = Point2f(objectToDetect->cols, objectToDetect->rows);
-        objectCorners[3] = Point2f(0, objectToDetect->rows);
-
-        // Perspective drawing
-        perspectiveTransform(objectCorners, frameCorners, homography);
-
-        // Draw lines between corners 1 -> 2, 2 -> 3... etc
-        line(combinedMatches, frameCorners[0] + Point2f(objectToDetect->cols, 0), frameCorners[1] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-        line(combinedMatches, frameCorners[1] + Point2f(objectToDetect->cols, 0), frameCorners[2] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-        line(combinedMatches, frameCorners[2] + Point2f(objectToDetect->cols, 0), frameCorners[3] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-        line(combinedMatches, frameCorners[3] + Point2f(objectToDetect->cols, 0), frameCorners[0] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-
-        // Show results
-		imshow(windowName, combinedMatches);	    // Display frame in window
-        waitKey(10);
-		count++;
-
-	}
-	waitKey(0);					                    // Press key to close window
-
-    // Return number of frames in video
-    return count;
+    // Return the irregular rhombus formed by the defined corners
+    return new std::vector<Point2f>(frameCorners);
 
 }
 
 // initialize some settings before main loop
 void initSome(VideoCapture& capture) {
   //capture.read(result);
-  capture.read(prev_frame); cvtColor(prev_frame, prev_frame, CV_BGR2GRAY);
-  capture.read(current_frame); cvtColor(current_frame, current_frame, CV_BGR2GRAY);
-  capture.read(next_frame); cvtColor(next_frame, next_frame, CV_BGR2GRAY);
+  capture.read(prev_frame); cvtColor(prev_frame, prev_frame, COLOR_BGR2GRAY);
+  capture.read(current_frame); cvtColor(current_frame, current_frame, COLOR_BGR2GRAY);
+  capture.read(next_frame); cvtColor(next_frame, next_frame, COLOR_BGR2GRAY);
   x_start=y_start=10;
   x_stop=current_frame.cols-10;
   y_stop=current_frame.rows-10;
@@ -351,7 +345,7 @@ void initSome(VideoCapture& capture) {
 int detectMotion(const Mat & motion, const Mat & frame, Mat & result, Mat & result_cropped,
                  int x_start, int x_stop, int y_start, int y_stop,
                  int max_deviation,
-                 Scalar & color)
+                 Scalar & color, Rect& drawingArea)
 {
     // calculate the standard deviation
     Scalar mean, stddev;
@@ -386,10 +380,10 @@ int detectMotion(const Mat & motion, const Mat & frame, Mat & result, Mat & resu
             // draw rectangle round the changed pixel
             Point x(min_x,min_y);
             Point y(max_x,max_y);
-            Rect rect(x,y);
-            Mat cropped = frame(rect);
+            drawingArea = Rect(x, y);
+            Mat cropped = frame(drawingArea);
             cropped.copyTo(result_cropped);
-            rectangle(result,rect,color,1);
+            //rectangle(result,drawingArea,color,1); //This is now drawn in main
         };//
         return number_of_changes;
     };//
@@ -402,7 +396,7 @@ int detectMotion(const Mat & motion, const Mat & frame, Mat & result, Mat & resu
 void detectHueColor ( const Mat & tmat, Mat & result ) {
 //find main hue color
   Mat hsv;
-  vector <Mat> channels;
+  std::vector <Mat> channels;
   int i, h;
   MatND tH;
   int maxH;
@@ -411,7 +405,7 @@ void detectHueColor ( const Mat & tmat, Mat & result ) {
   float hue_range[] = { 0, 180 };
   const float* hRanges[] = { hue_range };
 
-  cvtColor(tmat, hsv, CV_BGR2HSV);
+  cvtColor(tmat, hsv, COLOR_BGR2HSV);
   split(hsv, channels);
   calcHist(&channels[0], 1, 0, Mat(), tH, 1, histSize, hRanges, true, false); 
   h=0; maxH=0;
@@ -427,7 +421,7 @@ void detectHueColor ( const Mat & tmat, Mat & result ) {
 //  cout << "hue: " << h << "  maxh : " << maxH << endl;
   Mat hmColor(50,50,CV_8UC3,Scalar(h,255,255) );
   Mat mHColor;
-  cvtColor(hmColor, mHColor, CV_HSV2BGR);
+  cvtColor(hmColor, mHColor, COLOR_HSV2BGR);
   mHColor.copyTo(result.colRange(0,50).rowRange(result.rows-50,result.rows) );
 };//detect Color
 
@@ -436,7 +430,7 @@ void detectBGRColor ( const Mat & tmat, Mat & result) {
 //based code off of
 //http://stackoverflow.com/questions/20567643/getting-dominant-colour-value-from-hsv-histogram
   Mat image_bgr;
-  cvtColor(tmat, image_bgr, CV_BGR2HSV);
+  cvtColor(tmat, image_bgr, COLOR_BGR2HSV);
     
   int bbins = 36, gbins = 36, rbins = 36;
   int histSize[] = {bbins, gbins, rbins};
@@ -471,19 +465,22 @@ void detectBGRColor ( const Mat & tmat, Mat & result) {
 
 //main motion detection portion. Compares frame and difference to detect motion
 //based from: http://blog.cedric.ws/opencv-simple-motion-detection
-void motionCheck(const Mat & frame, Mat & result ) {
+Rect* motionCheck(const Mat & frame, Mat & result ) {
   Mat     d1, d2, motion;
   Mat kernel_ero = getStructuringElement(MORPH_RECT, Size(2,2));
 
   prev_frame = current_frame; current_frame = next_frame; next_frame=frame;
-  cvtColor(next_frame, next_frame, CV_BGR2GRAY);
+  cvtColor(next_frame, next_frame, COLOR_BGR2GRAY);
   absdiff(prev_frame, next_frame, d1);
   absdiff(next_frame, current_frame, d2);
   bitwise_and(d1, d2, motion);
-  threshold(motion, motion, 35, 255, CV_THRESH_BINARY);
+  threshold(motion, motion, 35, 255, THRESH_BINARY);
   erode(motion, motion, kernel_ero);
+
+  // Rectangle of motion to be drawn later
+  Rect rectangleFromMotionDetect;
     
-  number_of_changes = detectMotion(motion, frame, result, result_cropped,  x_start, x_stop, y_start, y_stop, max_deviation, color);
+  number_of_changes = detectMotion(motion, frame, result, result_cropped,  x_start, x_stop, y_start, y_stop, max_deviation, color, rectangleFromMotionDetect);
     if(number_of_changes>=there_is_motion) {
       if(number_of_sequence>0) { 
 //      cout << "changes detected" << endl;
@@ -495,4 +492,34 @@ void motionCheck(const Mat & frame, Mat & result ) {
     } else {
       number_of_sequence = 0;
     };//else
+
+    // Return our created rectangle for drawing in main function
+    Rect* rectangle = new Rect(rectangleFromMotionDetect);
+    return rectangle;
 };//motionCheck
+
+/*
+ *
+ *  drawPolygon - draws a polygon based on given points
+ *
+ */
+void drawPolygon(Mat& canvas, std::vector<Point2f> points, Scalar color, int thickness)
+{
+
+    // Error checking
+    if (points.size() < 3)
+    {
+        std::cout << "$ ERROR: drawPolygon called with less than 3 points" << std::endl;
+        return;
+    }
+
+    // For every point in points, connect it to the next
+    for (int i = 0; i < points.size() - 1; i++)
+    {
+        line(canvas, points[i], points[i + 1], color, thickness);
+    }
+
+    // Connect last point to first
+    line(canvas, points[points.size() - 1], points[0], color, thickness);
+
+}

@@ -11,12 +11,3 @@
 *.lai
 *.la
 *.a
-
-# Videos (too large)
-*.avi
-*.mp4
-
-# Images
-*.png
-*.PNG
-*.jpg
