@@ -42,6 +42,8 @@ Mat     prev_frame, current_frame, next_frame;
 int     number_of_changes, number_of_sequence = 0;
 Scalar  mean_, color(0,255,255);                    // yellow
 int     x_start, x_stop, y_start , y_stop;          //area to detect motion
+int     selHue=0, selX=0, selY=0;                         //selected Hue, x,y result of selected
+bool    hueSelected=false;
 
 // Constants
 const int minimumHessian = 400;                         // Parameter for feature detector
@@ -74,6 +76,7 @@ void initSome(VideoCapture&);
 int detectMotion(const Mat & , const Mat &, Mat & , int , int , int , int , int, Scalar &, Rect&);//detect motion
 Rect* motionCheck(const Mat& , int&, int&, int&, int&);//check for motion, return area of interest
 void drawPolygon(Mat&, std::vector<Point2f>, Scalar, int);
+void CallBackFunc(int, int, int, int, void*);
 
 int main(int argc, const char* argv[])
 {
@@ -116,7 +119,7 @@ int main(int argc, const char* argv[])
     namedWindow(detectionWindow, WINDOW_NORMAL);//resizable
     resizeWindow(detectionWindow,640,480);//window is resized mouse can change size
 
-    std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n"; //foc opencv 3.0
+//    std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n"; //foc opencv 3.0
 //    std::cout << "fps: " << capture.get(CV_CAP_PROP_FPS)<< "\t w: " << capture.get(CV_CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CV_CAP_PROP_FRAME_HEIGHT) << "\n"; //for opencv 2.4.x
     initSome(capture);
     while ( capture.isOpened() ) {//main Loop
@@ -143,9 +146,23 @@ int main(int argc, const char* argv[])
       //display rgb color 50x50 values
         Mat mBGRColor(50,50, CV_8UC3, Scalar(theBlue, theGreen, theRed) );                      //create small square of color
         mBGRColor.copyTo(finalImage.colRange(100,150).rowRange(finalImage.rows-50,finalImage.rows) );//copy image to final result
-      
+      putText(finalImage,"sHUE",Point(200,finalImage.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);       // write hue on result image
+      //display selected hue color 50x50 
+        Mat shColor(50,50,CV_8UC3,Scalar(selHue,255,255) ), shHColor;
+        cvtColor(shColor, shHColor, COLOR_HSV2BGR);
+        shHColor.copyTo(finalImage.colRange(200,250).rowRange(finalImage.rows-50,finalImage.rows) );
+
       // Display the result
       imshow(detectionWindow, finalImage);
+      setMouseCallback(detectionWindow,CallBackFunc,NULL);//mouse call
+      if (hueSelected) {//get hue over mouse click
+        Mat tMat; std::vector <Mat> tchannels;
+        cvtColor(frame,tMat,COLOR_BGR2HSV);
+        split(tMat, tchannels);
+        selHue=(int)tchannels[0].at<uchar>(selY,selX);
+        hueSelected=false;
+      }; //hue clicked
+     
       if (waitKey(20) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
 
     };//while main Loop
@@ -529,3 +546,17 @@ void drawPolygon(Mat& canvas, std::vector<Point2f> points, Scalar color, int thi
     line(canvas, points[points.size() - 1], points[0], color, thickness);
 
 }
+
+
+//detect mouse click
+//code based from: http://opencv-srf.blogspot.com/2011/11/mouse-events.html
+void CallBackFunc(int event, int x, int y, int flags, void* userdata) {
+  if  ( event == EVENT_LBUTTONDOWN ) {
+    selX=x; selY=y;//set global x,y position of mouseclick
+    hueSelected=true;
+  }
+  else if  ( event == EVENT_RBUTTONDOWN ) {
+    selX=0; selY=0; selHue=0;//reset selected hue's
+    hueSelected=false;
+  };//else
+};//CallBackFunc
