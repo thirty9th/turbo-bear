@@ -35,7 +35,9 @@ using namespace cv;
 const std::string imageDir = "images/";             // Directory for images
 const std::string videoDir = "videos/";             // Directory for videos
 const std::string sourceVideo = "source3.mp4";      // Source video
+//const std::string sourceVideo = "tomato4.mp4";      // Source video
 const std::string objectProfile = "makeup.png";     // Object to be detected within video
+//const std::string objectProfile = "tomato.png";     // Object to be detected within video
 
 // Variables
 Mat     prev_frame, current_frame, next_frame;
@@ -51,6 +53,7 @@ const int there_is_motion = 5;                          //# of detects motion
 const int max_deviation = 20;                           //# of max deviations
 const Scalar colorMotionBox = Scalar(255, 0, 0);        // Color of bounding box for motion detection
 const Scalar colorHomographyBox = Scalar(0, 255, 0);    // Color of bounding box for homography prediction
+const Scalar colorHueBox = Scalar(0, 255, 255);        // Color of bounding box for homography prediction
 const int homographyBoxThickness = 4;                   // Thickness of homography prediction bounding box
 const Scalar colorText = Scalar(255, 255, 255);         // Color of text drawn to screen
 
@@ -77,6 +80,7 @@ int detectMotion(const Mat & , const Mat &, Mat & , int , int , int , int , int,
 Rect* motionCheck(const Mat& , int&, int&, int&, int&);//check for motion, return area of interest
 void drawPolygon(Mat&, std::vector<Point2f>, Scalar, int);
 void CallBackFunc(int, int, int, int, void*);
+void hueTrack(Mat&, Rect&);
 
 int main(int argc, const char* argv[])
 {
@@ -131,13 +135,18 @@ int main(int argc, const char* argv[])
 
       // Use homography to predict where the object is in the frame; again save area for drawing later
       std::vector<Point2f>* homographyPoints = detectObjectInVideo(frame, &objectToDetect);
-      
+
+      // Detect Hue object based on selected object by mouse
+      Rect hueBox;
+      hueTrack(frame,hueBox);
+
       // Draw motion box, homography prediction box and Hue/RGB values to new image
       Mat finalImage;
       frame.copyTo(finalImage);
       rectangle(finalImage, *motionBox, colorMotionBox, 1);                                     // Draw motion prediction box
       drawPolygon(finalImage, *homographyPoints, colorHomographyBox, homographyBoxThickness);   // Draw homography prediction box
-      putText(finalImage,"HUE",Point(0,finalImage.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);       // write hue on result image
+      rectangle(finalImage, hueBox, colorHueBox, 1);                                            // Draw Hue detect box
+      putText(finalImage,"HUE",Point(0,finalImage.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);   // write hue on result image
       //display hue color 50x50 max value, saturation
         Mat hmColor(50,50,CV_8UC3,Scalar(theHue,255,255) ), mHColor;
         cvtColor(hmColor, mHColor, COLOR_HSV2BGR);
@@ -163,7 +172,7 @@ int main(int argc, const char* argv[])
         hueSelected=false;
       }; //hue clicked
      
-      if (waitKey(20) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
+      if (waitKey(1) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
 
     };//while main Loop
 
@@ -560,3 +569,29 @@ void CallBackFunc(int event, int x, int y, int flags, void* userdata) {
     hueSelected=false;
   };//else
 };//CallBackFunc
+
+//color wheel: http://i.imgur.com/PKjgfFXm.jpg
+void hueTrack(Mat& frame, Rect& hueArea) {
+  Mat hsvImage, imgThreshed;
+  int minH, maxH;
+  cvtColor(frame, hsvImage, COLOR_BGR2HSV);
+  minH=selHue-10; if (minH<0) minH=0;
+  maxH=selHue+10; if (maxH>180) maxH=180;
+  inRange(hsvImage, Scalar(minH, 100, 100), Scalar(maxH, 255, 255), imgThreshed);
+  int min_x = imgThreshed.cols, max_x = 0;
+  int min_y = imgThreshed.rows, max_y = 0;
+  for(int j = 0; j < imgThreshed.rows; j+=2){ // height
+    for(int i = 0; i < imgThreshed.cols; i+=2){ // width
+       if(static_cast<int>(imgThreshed.at<uchar>(j,i)) == 255) {
+         if(min_x>i) min_x = i;
+         if(max_x<i) max_x = i;
+         if(min_y>j) min_y = j;
+         if(max_y<j) max_y = j;
+       };//if
+    };//for i
+  };//for j
+  Point x(min_x,min_y);
+  Point y(max_x,max_y);
+  hueArea= Rect(x, y);
+  //imshow("debughue",imgThreshed);
+};//hueTrack
