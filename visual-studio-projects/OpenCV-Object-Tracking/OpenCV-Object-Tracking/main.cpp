@@ -4,8 +4,10 @@
  * 	Author: 		Dillon Fisher
  * 	            Young Lee
  * 	Date: 			7 April, 2014
- * 	Description:	Driver file for object detection
+ * 	Description:	Driver file for object detection Project (1)
  * 	Usage:
+ *    verify video file and image location and name
+ *    click on hue color to track with mouse
  *
  */
 
@@ -35,17 +37,17 @@ using namespace cv;
 const std::string imageDir = "images/";             // Directory for images
 const std::string videoDir = "videos/";             // Directory for videos
 const std::string sourceVideo = "source3.mp4";      // Source video
-//const std::string sourceVideo = "tomato4.mp4";      // Source video
 const std::string objectProfile = "makeup.png";     // Object to be detected within video
-//const std::string objectProfile = "tomato.png";     // Object to be detected within video
+//const std::string sourceVideo = "tomato.mp4";      // Source video
+//const std::string objectProfile = "loTomato.png";     // Object to be detected within video
 
 // Variables
-Mat     prev_frame, current_frame, next_frame;
-int     number_of_changes, number_of_sequence = 0;
-Scalar  mean_, color(0,255,255);                    // yellow
+Mat     prev_frame, current_frame, next_frame;      //for motion detection
+int     number_of_changes, number_of_sequence = 0;  //for motion detection
+Scalar  mean_, color(0,255,255);                    //yellow
 int     x_start, x_stop, y_start , y_stop;          //area to detect motion
-int     selHue=0, selX=0, selY=0;                         //selected Hue, x,y result of selected
-bool    hueSelected=false;
+int     selHue=0, selX=0, selY=0;                   //selected Hue, x,y result of selected
+bool    hueSelected=false;                          //check if hue selected
 
 // Constants
 const int minimumHessian = 400;                         // Parameter for feature detector
@@ -53,7 +55,7 @@ const int there_is_motion = 5;                          //# of detects motion
 const int max_deviation = 20;                           //# of max deviations
 const Scalar colorMotionBox = Scalar(255, 0, 0);        // Color of bounding box for motion detection
 const Scalar colorHomographyBox = Scalar(0, 255, 0);    // Color of bounding box for homography prediction
-const Scalar colorHueBox = Scalar(0, 255, 255);        // Color of bounding box for homography prediction
+const Scalar colorHueBox = Scalar(0, 255, 255);         // Color of bounding box for homography prediction
 const int homographyBoxThickness = 4;                   // Thickness of homography prediction bounding box
 const Scalar colorText = Scalar(255, 255, 255);         // Color of text drawn to screen
 
@@ -75,12 +77,12 @@ void displayVideo(VideoCapture&, const std::string);
 std::vector<Point2f>* detectObjectInVideo(const Mat&, Mat*);
 void detectHueColor ( const Mat &, int &);    //detect main hue color
 void detectBGRColor ( const Mat &, int &);    //detect main BGR color
-void initSome(VideoCapture&);
+void initSome(VideoCapture&);                 //initialize some var
 int detectMotion(const Mat & , const Mat &, Mat & , int , int , int , int , int, Scalar &, Rect&);//detect motion
 Rect* motionCheck(const Mat& , int&, int&, int&, int&);//check for motion, return area of interest
 void drawPolygon(Mat&, std::vector<Point2f>, Scalar, int);
-void CallBackFunc(int, int, int, int, void*);
-void hueTrack(Mat&, Rect&);
+void CallBackFunc(int, int, int, int, void*);//for mouse
+void hueTrack(Mat&, Rect&);                   //track based on hue
 
 int main(int argc, const char* argv[])
 {
@@ -212,6 +214,8 @@ bool loadImage(Mat &input, std::string filename)
 
 	// Load desired image
 	input = imread(imageDir + filename, 0); // Grayscale
+
+  //GaussianBlur(input,input,Size(9,9), 0,0);//not sure if this impacts anything. Theoretical reduce interesting points? -yl
 
 	// Check that it loaded correctly
 	if (!input.data)
@@ -449,12 +453,12 @@ void detectHueColor ( const Mat & tmat, int & theHue ) {
   for ( i=0; i<tH.rows-1; i++ ) {
     if (tH.at<float>(i) > maxH ) {
       maxH=(int) tH.at<float>(i) ;
-      h=i*180/tH.rows;
+      h=i*180/tH.rows;//assign correct hue
     };//if greater
   };//for i
   
-//  cout << "hue: " << h << "  maxh : " << maxH << endl;
-  theHue=h;
+//  cout << "hue: " << h << "  maxh : " << maxH << endl; //for debug
+  theHue=h;//assign hue
 };//detect Color
 
 //find main BGR color
@@ -490,7 +494,7 @@ void detectBGRColor ( const Mat & tmat, int& theBlue, int& theGreen, int& theRed
     };//for g
   };//for b
 
-//  cout<< "b: " << bMax << "\tg: " << gMax << " \tr: " << rMax << endl;
+//  cout<< "b: " << bMax << "\tg: " << gMax << " \tr: " << rMax << endl;//fordebug
   theBlue=bMax;
   theGreen=gMax;
   theRed=rMax;
@@ -557,19 +561,20 @@ void drawPolygon(Mat& canvas, std::vector<Point2f> points, Scalar color, int thi
 }
 
 
-//detect mouse click
+//Detect mouse click.
 //code based from: http://opencv-srf.blogspot.com/2011/11/mouse-events.html
 void CallBackFunc(int event, int x, int y, int flags, void* userdata) {
   if  ( event == EVENT_LBUTTONDOWN ) {
     selX=x; selY=y;//set global x,y position of mouseclick
-    hueSelected=true;
+    hueSelected=true;//set flag that hue has been selected
   }
   else if  ( event == EVENT_RBUTTONDOWN ) {
     selX=0; selY=0; selHue=0;//reset selected hue's
-    hueSelected=false;
+    hueSelected=false;//reset hue flag
   };//else
 };//CallBackFunc
 
+//Find the selected Hue and find boundary
 //color wheel: http://i.imgur.com/PKjgfFXm.jpg
 void hueTrack(Mat& frame, Rect& hueArea) {
   Mat hsvImage, imgThreshed;
@@ -578,6 +583,7 @@ void hueTrack(Mat& frame, Rect& hueArea) {
   minH=selHue-10; if (minH<0) minH=0;
   maxH=selHue+10; if (maxH>180) maxH=180;
   inRange(hsvImage, Scalar(minH, 100, 100), Scalar(maxH, 255, 255), imgThreshed);
+  //find outer boundaries rectangle
   int min_x = imgThreshed.cols, max_x = 0;
   int min_y = imgThreshed.rows, max_y = 0;
   for(int j = 0; j < imgThreshed.rows; j+=2){ // height
