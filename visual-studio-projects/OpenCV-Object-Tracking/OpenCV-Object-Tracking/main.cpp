@@ -2,7 +2,7 @@
  *
  * 	File: 			main.cpp
  * 	Author: 		Dillon Fisher
- * 	            Young Lee
+ * 	                Young Lee
  * 	Date: 			7 April, 2014
  * 	Description:	Driver file for object detection
  * 	Usage:
@@ -32,16 +32,17 @@ using namespace cv;
  * 	Globals
  */
 // Filenames
-const std::string imageDir = "images/";             // Directory for images
-const std::string videoDir = "videos/";             // Directory for videos
-const std::string sourceVideo = "source3.mp4";      // Source video
-const std::string objectProfile = "makeup.png";     // Object to be detected within video
+const std::string imageDir = "images/";                 // Directory for images
+const std::string videoDir = "videos/";                 // Directory for videos
+const std::string sourceVideo = "source3.mp4";          // Source video
+const std::string objectProfile = "makeup.png";         // Object to be detected within video
+const std::string outputVideo = "processedSource.avi";  // Source video with added predictions
 
 // Variables
 Mat     prev_frame, current_frame, next_frame;
 int     number_of_changes, number_of_sequence = 0;
-Scalar  mean_, color(0,255,255);                    // yellow
-int     x_start, x_stop, y_start , y_stop;          //area to detect motion
+Scalar  mean_, color(0,255,255);                        // yellow
+int     x_start, x_stop, y_start , y_stop;              //area to detect motion
 
 // Constants
 const int minimumHessian = 400;                         // Parameter for feature detector
@@ -81,12 +82,26 @@ int main(int argc, const char* argv[])
 	// Show greeting header
 	printHeader();
 
+    // Ask the user if they would like to display the video as it is processed
+    std::string display;
+    bool displayProcessedVideo;
+    std::cout << "$ Display video while processing? (Y/N): ";
+    std::cin >> display;
+    if (display == "Y" || display == "y") displayProcessedVideo = true;
+    else if (display == "N" || display == "n") displayProcessedVideo = false;
+    else
+    {
+        // Bad response
+        std::cout << "$ ERROR: Invalid response" << std::endl;
+        return EXIT_ERROR;
+    }
+
 	// Load images into buffer from video source
 	// Start capture using a source video location
 	std::string filename = videoDir + sourceVideo;
 	VideoCapture capture(filename);
-  Mat frame;
-  int theHue, theBlue, theGreen, theRed;// main hue,bgr for motionarea
+    Mat frame;
+    int theHue, theBlue, theGreen, theRed;// main hue,bgr for motionarea
 
 	// Check that it opened properly
 	if (!capture.isOpened())
@@ -113,13 +128,39 @@ int main(int argc, const char* argv[])
     // Perform 2D homography on the video frames and draw bounding boxes on predictions
     // of where the object is
     const std::string detectionWindow = "Homography-Results";
-    namedWindow(detectionWindow, WINDOW_NORMAL);//resizable
+    if (displayProcessedVideo) namedWindow(detectionWindow, WINDOW_NORMAL);//resizable
     resizeWindow(detectionWindow,640,480);//window is resized mouse can change size
 
+    // Set up input video
     std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n"; //foc opencv 3.0
 //    std::cout << "fps: " << capture.get(CV_CAP_PROP_FPS)<< "\t w: " << capture.get(CV_CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CV_CAP_PROP_FRAME_HEIGHT) << "\n"; //for opencv 2.4.x
     initSome(capture);
+
+    // Set up output video with size and a video writer
+    Size inputVideoSize = Size((int)capture.get(CAP_PROP_FRAME_WIDTH), (int)capture.get(CAP_PROP_FRAME_HEIGHT));
+    VideoWriter outputVideoWriter;
+    outputVideoWriter.open(videoDir + outputVideo, -1, capture.get(CAP_PROP_FPS), inputVideoSize, true); 
+
+    // Make sure the video writer opened properly
+    if (!outputVideoWriter.isOpened())
+    {
+        // Failed
+        std::cout << "$ ERROR: Could not open video writer for file <" << videoDir + outputVideo << ">" << std::endl;
+        std::cin.get();
+        return EXIT_ERROR;
+    }
+    else
+    {
+        // Succeeded
+        std::cout << "$ Opened output video file <" << videoDir + outputVideo << ">" << std::endl;
+    }
+
+    // Loop through input video frames
+    int frameCount = 0;
     while ( capture.isOpened() ) {//main Loop
+
+        // Display progress
+        std::cout << "$ Processing frame #" << frameCount++ << std::endl;
 
       capture.read(frame);//read in next frame
 
@@ -135,19 +176,25 @@ int main(int argc, const char* argv[])
       rectangle(finalImage, *motionBox, colorMotionBox, 1);                                     // Draw motion prediction box
       drawPolygon(finalImage, *homographyPoints, colorHomographyBox, homographyBoxThickness);   // Draw homography prediction box
       putText(finalImage,"HUE",Point(0,finalImage.rows-75),FONT_HERSHEY_DUPLEX,1, colorText);       // write hue on result image
+      
       //display hue color 50x50 max value, saturation
         Mat hmColor(50,50,CV_8UC3,Scalar(theHue,255,255) ), mHColor;
         cvtColor(hmColor, mHColor, COLOR_HSV2BGR);
         mHColor.copyTo(finalImage.colRange(0,50).rowRange(finalImage.rows-50,finalImage.rows) );
       putText(finalImage,"RGB",Point(100,finalImage.rows-75),FONT_HERSHEY_DUPLEX,1, colorText); // write rgb on result image
+      
       //display rgb color 50x50 values
         Mat mBGRColor(50,50, CV_8UC3, Scalar(theBlue, theGreen, theRed) );                      //create small square of color
         mBGRColor.copyTo(finalImage.colRange(100,150).rowRange(finalImage.rows-50,finalImage.rows) );//copy image to final result
       
       // Display the result
-      imshow(detectionWindow, finalImage);
-      if (waitKey(20) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
-
+        if (displayProcessedVideo)
+        {
+            imshow(detectionWindow, finalImage);
+            if (waitKey(20) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
+        }
+        // Save this processed frame to the output video writer
+        outputVideoWriter << finalImage;
     };//while main Loop
 
 	// Exit successfully
