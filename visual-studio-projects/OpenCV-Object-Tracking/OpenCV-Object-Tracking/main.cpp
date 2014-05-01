@@ -139,7 +139,10 @@ int main(int argc, const char* argv[])
     if (displayProcessedVideo) namedWindow(detectionWindow, WINDOW_NORMAL);//resizable
     resizeWindow(detectionWindow,640,480);//window is resized mouse can change size
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> f153d37a6599eb9f043ac655d3ecc6f81e8add83
 //    std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n"; //foc opencv 3.0
 //    std::cout << "fps: " << capture.get(CV_CAP_PROP_FPS)<< "\t w: " << capture.get(CV_CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CV_CAP_PROP_FRAME_HEIGHT) << "\n"; //for opencv 2.4.x
     initSome(capture);
