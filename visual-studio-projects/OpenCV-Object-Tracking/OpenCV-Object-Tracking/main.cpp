@@ -34,11 +34,12 @@ using namespace cv;
  * 	Globals
  */
 // Filenames
-const std::string imageDir = "images/";             // Directory for images
-const std::string videoDir = "videos/";             // Directory for videos
-const std::string sourceVideo = "source3.mp4";      // Source video
-const std::string objectProfile = "makeup.png";     // Object to be detected within video
-//const std::string sourceVideo = "tomato.mp4";      // Source video
+const std::string imageDir = "images/";                 // Directory for images
+const std::string videoDir = "videos/";                 // Directory for videos
+const std::string sourceVideo = "source3.mp4";          // Source video
+const std::string objectProfile = "makeup.png";         // Object to be detected within video
+const std::string outputVideo = "processedVideo.avi";   // Output video
+//const std::string sourceVideo = "tomato.mp4";         // Source video
 //const std::string objectProfile = "loTomato.png";     // Object to be detected within video
 
 // Variables
@@ -48,6 +49,7 @@ Scalar  mean_, color(0,255,255);                    //yellow
 int     x_start, x_stop, y_start , y_stop;          //area to detect motion
 int     selHue=0, selX=0, selY=0;                   //selected Hue, x,y result of selected
 bool    hueSelected=false;                          //check if hue selected
+std::vector<Point2f> homographyPrevBestGuess;       // Best guess for previous homography trials
 
 // Constants
 const int minimumHessian = 400;                         // Parameter for feature detector
@@ -58,6 +60,7 @@ const Scalar colorHomographyBox = Scalar(0, 255, 0);    // Color of bounding box
 const Scalar colorHueBox = Scalar(0, 255, 255);         // Color of bounding box for homography prediction
 const int homographyBoxThickness = 4;                   // Thickness of homography prediction bounding box
 const Scalar colorText = Scalar(255, 255, 255);         // Color of text drawn to screen
+const double maxAllowedAreaDiff = 100.0;                 // Maximum allowed area difference in homography prediction
 
 /*
  * 	Defines
@@ -139,10 +142,6 @@ int main(int argc, const char* argv[])
     if (displayProcessedVideo) namedWindow(detectionWindow, WINDOW_NORMAL);//resizable
     resizeWindow(detectionWindow,640,480);//window is resized mouse can change size
 
-<<<<<<< HEAD
-
-=======
->>>>>>> f153d37a6599eb9f043ac655d3ecc6f81e8add83
 //    std::cout << "fps: " << capture.get(CAP_PROP_FPS)<< "\t w: " << capture.get(CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CAP_PROP_FRAME_HEIGHT) << "\n"; //foc opencv 3.0
 //    std::cout << "fps: " << capture.get(CV_CAP_PROP_FPS)<< "\t w: " << capture.get(CV_CAP_PROP_FRAME_WIDTH) << "\t h: "<< capture.get(CV_CAP_PROP_FRAME_HEIGHT) << "\n"; //for opencv 2.4.x
     initSome(capture);
@@ -168,12 +167,15 @@ int main(int argc, const char* argv[])
 
     // Loop through input video frames
     int frameCount = 0;
+    homographyPrevBestGuess.clear();
+    Mat scaledFinalImage;
     while ( capture.isOpened() ) {//main Loop
 
         // Display progress
         std::cout << "$ Processing frame #" << frameCount++ << std::endl;
 
       capture.read(frame);//read in next frame
+      if (frame.empty()) break;
 
       // Detect areas of motion; save area for drawing later to avoid conflict with homography
       Rect* motionBox = motionCheck(frame, theHue, theBlue, theGreen, theRed);
@@ -211,17 +213,19 @@ int main(int argc, const char* argv[])
         if (displayProcessedVideo)
         {
             imshow(detectionWindow, finalImage);
-      setMouseCallback(detectionWindow,CallBackFunc,NULL);//mouse call
-      if (hueSelected) {//get hue over mouse click
-        Mat tMat; std::vector <Mat> tchannels;
-        cvtColor(frame,tMat,COLOR_BGR2HSV);
-        split(tMat, tchannels);
-        selHue=(int)tchannels[0].at<uchar>(selY,selX);
-        hueSelected=false;
-      }; //hue clicked
+            setMouseCallback(detectionWindow,CallBackFunc,NULL);//mouse call
+            if (hueSelected)
+            {//get hue over mouse click
+                Mat tMat; std::vector <Mat> tchannels;
+                cvtColor(frame,tMat,COLOR_BGR2HSV);
+                split(tMat, tchannels);
+                selHue=(int)tchannels[0].at<uchar>(selY,selX);
+                hueSelected=false;
+            }; //hue clicked
      
-      if (waitKey(1) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
+            if (waitKey(1) == 27) { std::cout << "esc key is pressed by user" << "\n"; break; };
         }
+
         // Save this processed frame to the output video writer
         outputVideoWriter << finalImage;
     };//while main Loop
@@ -376,11 +380,8 @@ std::vector<Point2f>* detectObjectInVideo(const Mat& frame, Mat* objectToDetect)
     // Keep only descriptor matches that are within 3 times the minimum distance
     for (int i = 0; i < objectDescriptors.rows; i++)
     {
-        if (matches[i].distance < min(objectToDetect->rows, objectToDetect->cols)) keptMatches.push_back(matches[i]);
+        if (matches[i].distance < 3 * min(objectToDetect->rows, objectToDetect->cols)) keptMatches.push_back(matches[i]);
     }
-
-    // Draw the remaining matches
-    // drawMatches(*objectToDetect, objectKeypoints, frameGray, frameKeypoints, keptMatches, combinedMatches, Scalar::all(-1), Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
 
     // Localize the object
     for (int i = 0; i < keptMatches.size(); i++)
@@ -391,7 +392,7 @@ std::vector<Point2f>* detectObjectInVideo(const Mat& frame, Mat* objectToDetect)
 
     // Find homography
     homography.release();
-    homography = findHomography(Mat(objectPoints), Mat(framePoints), RANSAC, 1.0);
+    homography = findHomography(Mat(objectPoints), Mat(framePoints), RANSAC, 3.0);
     if (homography.empty()) return new std::vector<Point2f>(emptyCorners);
 
     // Corners of source image for object profile
@@ -403,16 +404,28 @@ std::vector<Point2f>* detectObjectInVideo(const Mat& frame, Mat* objectToDetect)
     // Perspective drawing
     perspectiveTransform(objectCorners, frameCorners, homography);
 
-    // Draw lines between corners 1 -> 2, 2 -> 3... etc
-    /*  These are now drawn from main
-    line(combinedMatches, frameCorners[0] + Point2f(objectToDetect->cols, 0), frameCorners[1] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-    line(combinedMatches, frameCorners[1] + Point2f(objectToDetect->cols, 0), frameCorners[2] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-    line(combinedMatches, frameCorners[2] + Point2f(objectToDetect->cols, 0), frameCorners[3] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-    line(combinedMatches, frameCorners[3] + Point2f(objectToDetect->cols, 0), frameCorners[0] + Point2f(objectToDetect->cols, 0), Scalar(0, 255, 0), 4);
-    */
+    // Must use first homography prediction as the first best guess
+    if (homographyPrevBestGuess.empty())
+    {
+        // Use this execution as the best guess
+        homographyPrevBestGuess = frameCorners;
+        return new std::vector<Point2f>(frameCorners);
+    }
 
-    // Return the irregular rhombus formed by the defined corners
-    return new std::vector<Point2f>(frameCorners);
+    // Find the area of the drawn homography contour, compare it with the area of the original object
+    double predictedArea = contourArea(frameCorners);
+    double objectArea = objectToDetect->cols * objectToDetect->rows;
+    double areaDiff = abs(predictedArea - objectArea);
+    double averageArea = (predictedArea + objectArea) / 2;
+    double areaPercentDiff = (areaDiff / averageArea) * 100.0;
+    if (areaPercentDiff <= maxAllowedAreaDiff)
+    {
+        // areaPercentDiff is less than or equal to 10% (good homography prediction)
+        // Return the irregular rhombus formed by the defined corners
+        // Update best guess
+        homographyPrevBestGuess = frameCorners;
+        return new std::vector<Point2f>(frameCorners);
+    } else return new std::vector<Point2f>(homographyPrevBestGuess);
 
 }
 
