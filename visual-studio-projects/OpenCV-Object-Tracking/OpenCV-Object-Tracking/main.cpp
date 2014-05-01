@@ -9,6 +9,13 @@
  *    verify video file and image location and name
  *    click on hue color to track with mouse
  *
+ *  Directory structure
+ *    project.exe
+ *    images/
+ *    videos/
+ *
+ *  Output
+ *    videos/processedVideo.avi
  */
 
 /*
@@ -147,9 +154,11 @@ int main(int argc, const char* argv[])
     initSome(capture);
 
     // Set up output video with size and a video writer
-    Size inputVideoSize = Size((int)capture.get(CAP_PROP_FRAME_WIDTH), (int)capture.get(CAP_PROP_FRAME_HEIGHT));
+    Size inputVideoSize = Size((int)capture.get(CAP_PROP_FRAME_WIDTH), (int)capture.get(CAP_PROP_FRAME_HEIGHT));// for opencv 3.0
+//    Size inputVideoSize = Size((int)capture.get(CV_CAP_PROP_FRAME_WIDTH), (int)capture.get(CV_CAP_PROP_FRAME_HEIGHT));//for opencv 2.4
     VideoWriter outputVideoWriter;
-    outputVideoWriter.open(videoDir + outputVideo, -1, capture.get(CAP_PROP_FPS), inputVideoSize, true); 
+    outputVideoWriter.open(videoDir + outputVideo, -1, capture.get(CAP_PROP_FPS), inputVideoSize, true); //for opencv 3.0
+//    outputVideoWriter.open(videoDir + outputVideo, -1, capture.get(CV_CAP_PROP_FPS), inputVideoSize, true); //for opencv 2.4
 
     // Make sure the video writer opened properly
     if (!outputVideoWriter.isOpened())
@@ -267,9 +276,7 @@ bool loadImage(Mat &input, std::string filename)
 	// Load desired image
 	input = imread(imageDir + filename, 0); // Grayscale
 
-  //GaussianBlur(input,input,Size(9,9), 0,0);//not sure if this impacts anything. Theoretical reduce interesting points? -yl
-
-	// Check that it loaded correctly
+  // Check that it loaded correctly
 	if (!input.data)
 	{
 		std::cout << "$ ERROR: Failed to load requested image. Exiting..." << std::endl;
